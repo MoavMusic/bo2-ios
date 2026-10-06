@@ -123,7 +123,69 @@ fn decode(file: &[u8]) -> Result<Zone, String> {
     Ok(Zone { name, data, chunks: chunk_no })
 }
 
+const ASSET_NAMES: [&str; 60] = [
+    "xmodelpieces", "physpreset", "physconstraints", "destructibledef", "xanimparts", "xmodel",
+    "material", "technique_set", "image", "sound", "sound_patch", "clipmap", "clipmap_pvs",
+    "comworld", "gameworld_sp", "gameworld_mp", "map_ents", "gfxworld", "light_def", "ui_map",
+    "font", "fonticon", "menulist", "menu", "localize_entry", "weapon", "weapondef",
+    "weapon_variant", "weapon_full", "attachment", "attachment_unique", "weapon_camo",
+    "snddriver_globals", "fx", "impact_fx", "aitype", "mptype", "mpbody", "mphead", "character",
+    "xmodelalias", "rawfile", "stringtable", "leaderboard", "xglobals", "ddl", "glasses",
+    "emblemset", "scriptparsetree", "keyvaluepairs", "vehicledef", "memoryblock",
+    "addon_map_ents", "tracer", "skinnedverts", "qdb", "slug", "footstep_table",
+    "footstepfx_table", "zbarrier",
+];
+
+fn rd(d: &[u8], o: usize) -> u32 {
+    u32::from_le_bytes(d[o..o + 4].try_into().unwrap())
+}
+
+/// Parse the XFile header and XAssetList, returning (asset type counts, string count, depends).
+fn list_assets(z: &Zone) -> Result<(Vec<(u32, u32)>, u32, Vec<String>), String> {
+    let d = &z.data;
+    let mut o = 0x28; // XFile header: size, externalSize, blockSize[8]
+    let string_count = rd(d, o);
+    let strings_ptr = rd(d, o + 4);
+    let depend_count = rd(d, o + 8);
+    let depends_ptr = rd(d, o + 12);
+    let asset_count = rd(d, o + 16);
+    let assets_ptr = rd(d, o + 20);
+    o += 24;
+    let read_str = |o: &mut usize| -> String {
+        let end = d[*o..].iter().position(|&b| b == 0).unwrap_or(0);
+        let s = String::from_utf8_lossy(&d[*o..*o + end]).to_string();
+        *o += end + 1;
+        s
+    };
+    let skip_strings = |o: &mut usize, count: u32, ptr: u32| -> Vec<String> {
+        let mut out = Vec::new();
+        if ptr != 0xFFFF_FFFF {
+            return out;
+        }
+        let ptrs: Vec<u32> = (0..count as usize).map(|i| rd(d, *o + i * 4)).collect();
+        *o += count as usize * 4;
+        for p in ptrs {
+            if p == 0xFFFF_FFFF {
+                out.push(read_str(o));
+            }
+        }
+        out
+    };
+    let _strings = skip_strings(&mut o, string_count, strings_ptr);
+    let depends = skip_strings(&mut o, depend_count, depends_ptr);
+    if assets_ptr != 0xFFFF_FFFF {
+        return Err(format!("assets ptr {assets_ptr:#x}"));
+    }
+    let mut counts = std::collections::BTreeMap::new();
+    for i in 0..asset_count as usize {
+        let t = rd(d, o + i * 8);
+        *counts.entry(t).or_insert(0u32) += 1;
+    }
+    Ok((counts.into_iter().collect(), string_count, depends))
+}
+
 fn main() {
+    let list_mode = std::env::var("LIST").is_ok();
     let mut ok = 0;
     let mut bad = 0;
     for path in std::env::args().skip(1) {
@@ -136,6 +198,20 @@ fn main() {
             }
         };
         match decode(&file) {
+            Ok(z) if list_mode => {
+                ok += 1;
+                match list_assets(&z) {
+                    Ok((counts, strings, depends)) => {
+                        let summary: Vec<String> = counts
+                            .iter()
+                            .map(|(t, n)| format!("{}={n}", ASSET_NAMES.get(*t as usize).unwrap_or(&"?")))
+                            .collect();
+                        println!("{} strings={strings} depends={:?}
+    {}", z.name, depends, summary.join(" "));
+                    }
+                    Err(e) => println!("{}: LIST ERR {e}", z.name),
+                }
+            }
             Ok(z) => {
                 ok += 1;
                 let size = u32::from_le_bytes(z.data[0..4].try_into().unwrap());
