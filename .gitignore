@@ -19,3 +19,5 @@
 .env
 *.p12
 *.mobileprovision
+/_ref/
+/tools/**/target/

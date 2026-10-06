@@ -1,0 +1,9 @@
+[package]
+name = "t6probe"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+flate2 = "1.1.10"
+salsa20 = "0.11.0"
+sha1 = "0.11.0"
