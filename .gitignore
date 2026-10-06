@@ -1,0 +1,21 @@
+﻿# Never commit game data or converted assets
+*.ff
+*.ipak
+*.xpak
+*.pak
+*.bik
+*.flac
+*.ipa
+/assets/
+/packs/
+/game/
+/pluto_t6_full_game/
+
+# Rust / build output
+/target/
+**/target/
+
+# Local secrets
+.env
+*.p12
+*.mobileprovision
